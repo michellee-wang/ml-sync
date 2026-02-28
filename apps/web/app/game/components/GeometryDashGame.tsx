@@ -40,7 +40,7 @@ export function GeometryDashGame({ width = 1200, height = 600 }: GeometryDashGam
     const engine = new GameEngine(level, {
       canvasWidth: width,
       canvasHeight: height,
-      playerSpeed: 300,
+      playerSpeed: 220,
     });
 
     // Create renderer

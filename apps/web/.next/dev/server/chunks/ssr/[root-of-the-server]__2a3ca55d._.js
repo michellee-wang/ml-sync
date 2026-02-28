@@ -4506,7 +4506,7 @@ function GeometryDashGame({ width = 1200, height = 600 }) {
         const engine = new __TURBOPACK__imported__module__$5b$project$5d2f$sync$2f$packages$2f$game$2d$engine$2f$dist$2f$index$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["GameEngine"](level, {
             canvasWidth: width,
             canvasHeight: height,
-            playerSpeed: 300
+            playerSpeed: 220
         });
         // Create renderer
         const renderer = new __TURBOPACK__imported__module__$5b$project$5d2f$sync$2f$packages$2f$game$2d$engine$2f$dist$2f$index$2e$js__$5b$app$2d$ssr$5d$__$28$ecmascript$29$__["Renderer"]({

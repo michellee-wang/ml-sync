@@ -11,3 +11,6 @@
 [00:18:27.501] Browser LOG     Game Over! Final score: 0
 [00:18:29.682] Browser LOG     Game Over! Final score: 0
 [00:22:22.311] Server  LOG     ✓ Finished writing to filesystem cache in 17.6s
+[00:25:46.046] Server  LOG     ✓ Finished writing to filesystem cache in 10.5s
+[00:26:22.048] Server  LOG     ✓ Finished writing to filesystem cache in 11.3s
+[00:26:53.746] Server  LOG     ✓ Compiled in 19.6s

@@ -72,11 +72,9 @@ export class TemplateBasedStrategy implements GenerationStrategy {
     let currentX = 0;
     const targetLength = config.length;
 
-    // Calculate difficulty variance (allows some easier/harder sections)
-    const difficultyVariance = 0.2;
+    const difficultyVariance = 0.1;
 
     while (currentX < targetLength) {
-      // Sample difficulty with some variance for variety
       const segmentDifficulty = Math.max(
         0,
         Math.min(
@@ -85,9 +83,8 @@ export class TemplateBasedStrategy implements GenerationStrategy {
         )
       );
 
-      // Get appropriate templates for this difficulty
-      const minDiff = Math.max(0, segmentDifficulty - 0.2);
-      const maxDiff = Math.min(1, segmentDifficulty + 0.2);
+      const minDiff = Math.max(0, segmentDifficulty - 0.15);
+      const maxDiff = Math.min(1, segmentDifficulty + 0.15);
       const suitableTemplates = getTemplatesByDifficulty(minDiff, maxDiff);
 
       if (suitableTemplates.length === 0) {

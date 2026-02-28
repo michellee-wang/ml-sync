@@ -8,9 +8,9 @@ export class PhysicsEngine {
   constructor(config?: Partial<PhysicsConfig>) {
     // Default physics configuration (tuned for Geometry Dash-like gameplay)
     this.config = {
-      gravity: 2800, // pixels per second squared (increased for snappier feel)
-      jumpForce: -750, // negative = upward (increased to match gravity)
-      maxVelocity: { x: 400, y: 1200 }, // pixels per second
+      gravity: 1800,
+      jumpForce: -650,
+      maxVelocity: { x: 400, y: 900 },
       friction: 0.8,
       ...config,
     };
@@ -157,21 +157,49 @@ export class PhysicsEngine {
   handlePlayerCollision(player: Player, collidedObject: GameObject): boolean {
     switch (collidedObject.type) {
       case GameObjectType.OBSTACLE_SPIKE:
-      case GameObjectType.OBSTACLE_BLOCK:
-        // Fatal collision - game ends
         player.health = 0;
         return true;
 
+      case GameObjectType.OBSTACLE_BLOCK:
+        // Blocks are solid surfaces -- resolve like a platform collision.
+        // Only push the player out along the axis of least penetration.
+        this.resolveBlockCollision(player, collidedObject);
+        return false;
+
       case GameObjectType.PLATFORM:
-        // Platform collision handled in updatePlayer
         return false;
 
       case GameObjectType.PORTAL:
-        // Portal logic (can be extended later)
         return false;
 
       default:
         return false;
+    }
+  }
+
+  private resolveBlockCollision(player: Player, block: GameObject): void {
+    const overlapLeft = (player.position.x + player.size.x) - block.position.x;
+    const overlapRight = (block.position.x + block.size.x) - player.position.x;
+    const overlapTop = (player.position.y + player.size.y) - block.position.y;
+    const overlapBottom = (block.position.y + block.size.y) - player.position.y;
+
+    const minOverlap = Math.min(overlapLeft, overlapRight, overlapTop, overlapBottom);
+
+    if (minOverlap === overlapTop && player.velocity.y >= 0) {
+      // Landing on top of the block
+      player.position.y = block.position.y - player.size.y;
+      player.velocity.y = 0;
+      player.isOnGround = true;
+      player.isJumping = false;
+    } else if (minOverlap === overlapBottom && player.velocity.y < 0) {
+      // Hitting the block from below
+      player.position.y = block.position.y + block.size.y;
+      player.velocity.y = 0;
+    } else if (minOverlap === overlapLeft) {
+      // Running into the block's left side -- fatal (wall collision)
+      player.health = 0;
+    } else if (minOverlap === overlapRight) {
+      player.position.x = block.position.x + block.size.x;
     }
   }
 

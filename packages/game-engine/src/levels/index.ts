@@ -181,7 +181,9 @@ export function createInfiniteLevel(seed?: number): Level {
 
   for (let i = 0; i < numChunks; i++) {
     const globalOffset = 300 + i * chunkLength;
-    const difficulty = Math.min(1, 0.1 + (i / numChunks) * 0.9);
+    // Very gradual ramp: stays easy for the first ~20 chunks (~45s), then slowly climbs
+    const progress = i / numChunks;
+    const difficulty = Math.min(1, 0.05 + progress * progress * 0.95);
 
     const generated = generator.generate({
       difficulty,
