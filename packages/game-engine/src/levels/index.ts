@@ -86,7 +86,7 @@ export type { SegmentTemplate, SegmentFeatures } from './SegmentTemplates';
 // ============================================================================
 
 import { LevelGenerator } from './LevelGenerator';
-import { LevelGeneratorConfig, Level } from '../types';
+import { LevelGeneratorConfig, Level, GameObjectType } from '../types';
 
 /**
  * Create a default level generator instance
@@ -148,6 +148,69 @@ export function generateLevelBatch(
   }
 
   return levels;
+}
+
+/**
+ * Create a very long procedurally-generated level for endless/survival gameplay.
+ * Difficulty ramps gradually from easy to hard over the course of the level.
+ */
+export function createInfiniteLevel(seed?: number): Level {
+  const generator = new LevelGenerator();
+  const totalLength = 100000;
+  const chunkLength = 500;
+  const numChunks = totalLength / chunkLength;
+  const groundY = 500;
+
+  const segments: import('../types').LevelSegment[] = [];
+
+  // Safe starting zone: flat ground with no obstacles so the player can land
+  segments.push({
+    id: 'spawn-zone',
+    startX: 0,
+    length: 300,
+    difficulty: 0,
+    objects: [{
+      id: 'spawn-platform',
+      position: { x: 0, y: groundY },
+      velocity: { x: 0, y: 0 },
+      size: { x: 300, y: 50 },
+      type: GameObjectType.PLATFORM,
+      active: true,
+    }],
+  });
+
+  for (let i = 0; i < numChunks; i++) {
+    const globalOffset = 300 + i * chunkLength;
+    const difficulty = Math.min(1, 0.1 + (i / numChunks) * 0.9);
+
+    const generated = generator.generate({
+      difficulty,
+      length: chunkLength,
+      seed: (seed ?? 42) + i,
+      style: 'classic',
+    });
+
+    for (const seg of generated.segments) {
+      segments.push({
+        ...seg,
+        id: `inf-seg-${i}-${seg.id}`,
+        startX: globalOffset + seg.startX,
+        objects: seg.objects.map(obj => ({
+          ...obj,
+          position: { x: obj.position.x + globalOffset, y: obj.position.y },
+        })),
+      });
+    }
+  }
+
+  return {
+    id: `infinite-level-${seed ?? 42}`,
+    name: 'Infinite Level',
+    segments,
+    totalLength: 300 + totalLength,
+    difficulty: 0.5,
+    generatedBy: 'procedural',
+  };
 }
 
 /**

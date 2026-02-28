@@ -61,6 +61,7 @@ export class GameEngine {
       isPaused: false,
       isGameOver: false,
       score: 0,
+      elapsedTime: 0,
     };
   }
 
@@ -139,12 +140,14 @@ export class GameEngine {
 
     if (this.gameState.isPaused) return;
 
-    // Update player physics
-    const platforms = this.gameState.gameObjects.filter(
-      (obj) => obj.type === GameObjectType.PLATFORM && obj.active
+    this.gameState.elapsedTime += deltaTime;
+
+    // Update player physics (blocks act as solid surfaces too)
+    const surfaces = this.gameState.gameObjects.filter(
+      (obj) => (obj.type === GameObjectType.PLATFORM || obj.type === GameObjectType.OBSTACLE_BLOCK) && obj.active
     );
 
-    this.physicsEngine.updatePlayer(this.gameState.player, platforms, deltaTime);
+    this.physicsEngine.updatePlayer(this.gameState.player, surfaces, deltaTime);
 
     // Maintain player's forward speed
     this.physicsEngine.setPlayerRunSpeed(this.gameState.player, this.config.playerSpeed);
