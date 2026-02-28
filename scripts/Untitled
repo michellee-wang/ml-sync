@@ -1,0 +1,1 @@
+modal run scripts/generate_midi_vae.py --temperature 1.0 --threshold 0.25 --num-samples 3
