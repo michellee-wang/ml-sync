@@ -1,12 +1,12 @@
 # ML Service - Music Genre Prediction & Fine-tuning
 
-A Python-based machine learning service for music genre prediction and fine-tuning based on Spotify data.
+A Python-based machine learning service for music genre prediction and fine-tuning.
 
 ## Overview
 
 This service provides:
 - **Genre Prediction**: Classify music tracks into genres using pretrained models
-- **Fine-tuning**: Adapt models to specific musical preferences using Spotify data
+- **Fine-tuning**: Adapt models to specific musical preferences
 - **Audio Analysis**: Extract features from audio files for classification
 - **API Integration**: RESTful API endpoints for model inference and training
 
@@ -45,8 +45,6 @@ pip install -r requirements.txt
 3. **Set up environment variables**:
 Create a `.env` file in the service root:
 ```env
-SPOTIFY_CLIENT_ID=your_client_id
-SPOTIFY_CLIENT_SECRET=your_client_secret
 MODEL_PATH=./pretrained/genre_classifier
 FINE_TUNE_DATA_PATH=./data/training
 ```
@@ -71,8 +69,6 @@ docker build -t ml-service:latest .
 2. **Run the container**:
 ```bash
 docker run -p 8000:8000 \
-  -e SPOTIFY_CLIENT_ID=your_id \
-  -e SPOTIFY_CLIENT_SECRET=your_secret \
   -v $(pwd)/pretrained:/app/pretrained \
   -v $(pwd)/data:/app/data \
   ml-service:latest
@@ -104,29 +100,15 @@ feature_extractor = AutoFeatureExtractor.from_pretrained("./pretrained/genre_cla
 - **facebook/musicgen**: Music generation and analysis
 - **Custom models**: Fine-tuned on genre-specific datasets
 
-## Fine-tuning with Spotify Data
-
-### Data Collection
-
-The service integrates with Spotify API to collect training data:
-
-1. **User Playlists**: Analyze listening history
-2. **Audio Features**: Extract tempo, energy, danceability, etc.
-3. **Track Metadata**: Genre labels, artist info, release dates
+## Fine-tuning
 
 ### Fine-tuning Process
 
-1. **Fetch Spotify Data**:
-```bash
-python scripts/fetch_spotify_data.py --user-id <spotify_user_id>
-```
-
-2. **Prepare Training Data**:
-- Audio features are extracted from preview URLs
-- Spotify audio features augment training data
+1. **Prepare Training Data**:
+- Audio features are extracted from audio files
 - Data is split into train/validation sets
 
-3. **Fine-tune Model**:
+2. **Fine-tune Model**:
 ```bash
 python src/training/fine_tune.py \
   --base-model ./pretrained/genre_classifier \
@@ -136,7 +118,7 @@ python src/training/fine_tune.py \
   --batch-size 16
 ```
 
-4. **Evaluation**:
+3. **Evaluation**:
 - Validate on held-out test set
 - Compare against base model performance
 - Generate classification reports
@@ -171,14 +153,6 @@ python src/training/fine_tune.py \
   }
   ```
 
-- `POST /predict/spotify` - Predict using Spotify track ID
-  ```json
-  {
-    "track_id": "spotify:track:...",
-    "model_name": "genre_classifier"
-  }
-  ```
-
 - `POST /analyze/features` - Extract audio features
   ```json
   {
@@ -192,7 +166,6 @@ python src/training/fine_tune.py \
   ```json
   {
     "base_model": "genre_classifier",
-    "spotify_user_id": "user123",
     "config": {
       "epochs": 10,
       "learning_rate": 2e-5
@@ -213,16 +186,15 @@ python src/training/fine_tune.py \
 ## Data Flow
 
 1. **Inference**:
-   - Client sends audio file or Spotify track ID
+   - Client sends audio file
    - Service extracts audio features
    - Model predicts genre probabilities
    - Returns top-k predictions with confidence scores
 
 2. **Fine-tuning**:
-   - Fetch user's Spotify listening data
-   - Download preview audio and extract features
-   - Fine-tune pretrained model on user preferences
-   - Save fine-tuned model for personalized predictions
+   - Load training audio data and extract features
+   - Fine-tune pretrained model on training data
+   - Save fine-tuned model for predictions
 
 ## Performance Optimization
 
@@ -257,7 +229,6 @@ pytest tests/integration/
 - API authentication required for fine-tuning endpoints
 - Rate limiting on all endpoints
 - Input validation for audio files
-- Secure storage of Spotify credentials
 
 ## License
 

@@ -16,18 +16,6 @@ router = APIRouter()
 # In-memory job store (in production, use Redis or database)
 job_store: Dict[str, Dict] = {}
 
-class SpotifyTrack(BaseModel):
-    name: str
-    artist: str
-    spotify_id: str
-    artists: List[str] = []
-    album: str = ""
-    popularity: int = 0
-    duration_ms: int = 0
-
-class SpotifyTracksRequest(BaseModel):
-    tracks: List[SpotifyTrack]
-
 class JobResponse(BaseModel):
     job_id: str
     status: Literal["queued", "running", "completed", "failed"]
@@ -44,154 +32,61 @@ class GenerationRequest(BaseModel):
     model_type: str = "vae"
     model_path: str = "pretrained_model.pt"
 
+
+class UserSong(BaseModel):
+    """User-entered song (no Spotify required)."""
+    artist: str = ""
+    name: str
+
+
+class MatchSongsRequest(BaseModel):
+    """Request to match user-entered songs to LMD MIDI files."""
+    songs: List[UserSong]
+    min_similarity: float = 0.75
+
+
 class PipelineResponse(BaseModel):
     job_id: str
     status: str
     message: str
     pipeline_steps: List[str]
 
-async def trigger_modal_matching(job_id: str, tracks_data: List[Dict]):
-    """Background task to trigger Modal matching pipeline"""
-    try:
-        # Update job status to running
-        job_store[job_id]["status"] = "running"
-        job_store[job_id]["updated_at"] = datetime.utcnow().isoformat()
-        job_store[job_id]["progress"] = 0.1
 
-        # Import Modal app dynamically
+
+
+@router.post("/match-songs")
+async def match_songs(request: MatchSongsRequest):
+    """
+    Match user-entered songs to LMD MIDI files (string/fuzzy matching).
+
+    No Spotify required. User provides artist + song name.
+    Output is saved to Modal volume for generate_from_matched.py.
+
+    Example body:
+        {"songs": [{"artist": "Noah Kahan", "name": "Call Your Mom"}]}
+    """
+    try:
         import sys
         scripts_path = Path(__file__).parent.parent.parent / "scripts"
         sys.path.insert(0, str(scripts_path))
 
-        from match_spotify_to_midi import app as match_app, match_tracks
+        from match_songs_to_midi import app as match_app, match_tracks
 
-        # Call Modal function
-        job_store[job_id]["progress"] = 0.3
-        job_store[job_id]["message"] = "Matching Spotify tracks to MIDI files..."
-
-        # Run Modal function asynchronously
+        tracks = [{"artist": s.artist, "name": s.name} for s in request.songs]
         with match_app.run():
-            result = match_tracks.remote(tracks_data, min_similarity=0.75)
+            result = match_tracks.remote(tracks, request.min_similarity)
 
-        # Update job with results
-        job_store[job_id]["status"] = "completed"
-        job_store[job_id]["progress"] = 1.0
-        job_store[job_id]["updated_at"] = datetime.utcnow().isoformat()
-        job_store[job_id]["result"] = {
+        return {
+            "status": "success",
             "matched_count": result["statistics"]["matched_count"],
             "unmatched_count": result["statistics"]["unmatched_count"],
             "match_rate": result["statistics"]["match_rate"],
-            "total_tracks": result["statistics"]["total_spotify_tracks"]
+            "total_tracks": result["statistics"]["total_user_tracks"],
+            "message": f"Matched {result['statistics']['matched_count']} of {result['statistics']['total_user_tracks']} tracks",
         }
-        job_store[job_id]["message"] = f"Successfully matched {result['statistics']['matched_count']} tracks"
-
     except Exception as e:
-        job_store[job_id]["status"] = "failed"
-        job_store[job_id]["error"] = str(e)
-        job_store[job_id]["updated_at"] = datetime.utcnow().isoformat()
-        job_store[job_id]["message"] = f"Matching failed: {str(e)}"
+        raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/save-spotify-tracks")
-async def save_spotify_tracks(request: SpotifyTracksRequest, background_tasks: BackgroundTasks):
-    """
-    Save Spotify tracks from frontend and trigger Modal matching pipeline
-
-    This endpoint:
-    1. Saves Spotify tracks locally and to Modal volume
-    2. Triggers Modal matching job asynchronously
-    3. Returns job_id for status tracking
-    """
-    tracks_data = [track.dict() for track in request.tracks]
-
-    # Save to data directory (local backup)
-    data_dir = Path(__file__).parent.parent.parent / "data"
-    data_dir.mkdir(exist_ok=True)
-
-    output_file = data_dir / "spotify_tracks.json"
-
-    with open(output_file, 'w') as f:
-        json.dump({
-            'tracks': tracks_data,
-            'total_tracks': len(tracks_data),
-        }, f, indent=2)
-
-    # Create job for tracking
-    job_id = str(uuid.uuid4())
-    job_store[job_id] = {
-        "job_id": job_id,
-        "status": "queued",
-        "message": "Matching job queued",
-        "created_at": datetime.utcnow().isoformat(),
-        "updated_at": datetime.utcnow().isoformat(),
-        "progress": 0.0,
-        "type": "matching",
-        "tracks_count": len(tracks_data)
-    }
-
-    # Trigger Modal matching in background
-    background_tasks.add_task(trigger_modal_matching, job_id, tracks_data)
-
-    return {
-        "status": "success",
-        "job_id": job_id,
-        "tracks_saved": len(tracks_data),
-        "file_path": str(output_file),
-        "message": "Spotify tracks saved and matching pipeline started",
-        "check_status": f"/api/ml/training-status/{job_id}"
-    }
-
-async def trigger_modal_generation(job_id: str, request: GenerationRequest):
-    """Background task to trigger Modal generation pipeline"""
-    try:
-        # Update job status to running
-        job_store[job_id]["status"] = "running"
-        job_store[job_id]["updated_at"] = datetime.utcnow().isoformat()
-        job_store[job_id]["progress"] = 0.2
-
-        # Import Modal app dynamically
-        import sys
-        scripts_path = Path(__file__).parent.parent.parent / "scripts"
-        sys.path.insert(0, str(scripts_path))
-
-        from generate_from_matched import app as gen_app, MIDIGenerator
-
-        # Update progress
-        job_store[job_id]["progress"] = 0.4
-        job_store[job_id]["message"] = "Initializing MIDI generation..."
-
-        # Run Modal function
-        with gen_app.run():
-            generator = MIDIGenerator(
-                model_type=request.model_type,
-                model_path=request.model_path
-            )
-
-            job_store[job_id]["progress"] = 0.6
-            job_store[job_id]["message"] = f"Generating {request.num_samples} MIDI files..."
-
-            generated_files = generator.generate.remote(
-                num_samples=request.num_samples,
-                temperature=request.temperature,
-                output_dir=f"samples_{job_id}"
-            )
-
-        # Update job with results
-        job_store[job_id]["status"] = "completed"
-        job_store[job_id]["progress"] = 1.0
-        job_store[job_id]["updated_at"] = datetime.utcnow().isoformat()
-        job_store[job_id]["result"] = {
-            "generated_files": generated_files,
-            "num_files": len(generated_files),
-            "output_volume": "generated-midi",
-            "output_dir": f"samples_{job_id}"
-        }
-        job_store[job_id]["message"] = f"Successfully generated {len(generated_files)} MIDI files"
-
-    except Exception as e:
-        job_store[job_id]["status"] = "failed"
-        job_store[job_id]["error"] = str(e)
-        job_store[job_id]["updated_at"] = datetime.utcnow().isoformat()
-        job_store[job_id]["message"] = f"Generation failed: {str(e)}"
 
 @router.post("/start-training")
 async def start_training(user_id: str):
@@ -223,55 +118,11 @@ async def start_training(user_id: str):
         "check_status": f"/api/ml/training-status/{job_id}"
     }
 
-@router.post("/generate-music")
-async def generate_music(request: GenerationRequest, background_tasks: BackgroundTasks):
-    """
-    Generate music from trained model using Modal
-
-    This endpoint:
-    1. Creates a generation job
-    2. Triggers Modal generation pipeline asynchronously
-    3. Returns job_id for status tracking
-
-    Args:
-        request: Generation parameters (num_samples, temperature, model_type, model_path)
-
-    Returns:
-        Job information with job_id for tracking
-    """
-    # Create job for tracking
-    job_id = str(uuid.uuid4())
-    job_store[job_id] = {
-        "job_id": job_id,
-        "status": "queued",
-        "message": "Generation job queued",
-        "created_at": datetime.utcnow().isoformat(),
-        "updated_at": datetime.utcnow().isoformat(),
-        "progress": 0.0,
-        "type": "generation",
-        "parameters": {
-            "num_samples": request.num_samples,
-            "temperature": request.temperature,
-            "model_type": request.model_type,
-            "model_path": request.model_path
-        }
-    }
-
-    # Trigger Modal generation in background
-    background_tasks.add_task(trigger_modal_generation, job_id, request)
-
-    return {
-        "status": "success",
-        "job_id": job_id,
-        "message": "Generation pipeline started",
-        "parameters": request.dict(),
-        "check_status": f"/api/ml/training-status/{job_id}"
-    }
 
 @router.get("/training-status/{job_id}", response_model=JobResponse)
 async def get_training_status(job_id: str):
     """
-    Get real-time status of any job (matching, training, or generation)
+    Get real-time status of any job (training, generation, etc.)
 
     Args:
         job_id: Unique job identifier returned from start endpoints
@@ -309,7 +160,7 @@ async def list_jobs(
 
     Args:
         status: Filter by status (queued, running, completed, failed)
-        job_type: Filter by type (matching, training, generation)
+        job_type: Filter by type (training, generation, etc.)
         limit: Maximum number of jobs to return
 
     Returns:
@@ -365,84 +216,6 @@ async def delete_job(job_id: str):
         "job_status": job.get("status")
     }
 
-@router.post("/pipeline/full")
-async def run_full_pipeline(
-    request: SpotifyTracksRequest,
-    background_tasks: BackgroundTasks,
-    auto_generate: bool = True,
-    num_samples: int = 10,
-    temperature: float = 0.9
-):
-    """
-    Run the full pipeline: matching -> (training) -> generation
-
-    This convenience endpoint:
-    1. Saves Spotify tracks and triggers matching
-    2. Optionally triggers generation after matching completes
-
-    Args:
-        request: Spotify tracks to process
-        auto_generate: Whether to automatically generate music after matching
-        num_samples: Number of MIDI files to generate
-        temperature: Generation temperature
-
-    Returns:
-        Pipeline job information with all job IDs
-    """
-    tracks_data = [track.dict() for track in request.tracks]
-
-    # Save tracks locally
-    data_dir = Path(__file__).parent.parent.parent / "data"
-    data_dir.mkdir(exist_ok=True)
-    output_file = data_dir / "spotify_tracks.json"
-
-    with open(output_file, 'w') as f:
-        json.dump({
-            'tracks': tracks_data,
-            'total_tracks': len(tracks_data),
-        }, f, indent=2)
-
-    # Create pipeline job
-    pipeline_id = str(uuid.uuid4())
-    matching_job_id = str(uuid.uuid4())
-
-    # Create matching job
-    job_store[matching_job_id] = {
-        "job_id": matching_job_id,
-        "status": "queued",
-        "message": "Matching job queued",
-        "created_at": datetime.utcnow().isoformat(),
-        "updated_at": datetime.utcnow().isoformat(),
-        "progress": 0.0,
-        "type": "matching",
-        "tracks_count": len(tracks_data),
-        "pipeline_id": pipeline_id
-    }
-
-    # Trigger matching
-    background_tasks.add_task(trigger_modal_matching, matching_job_id, tracks_data)
-
-    response = {
-        "status": "success",
-        "pipeline_id": pipeline_id,
-        "matching_job_id": matching_job_id,
-        "message": "Full pipeline started",
-        "steps": [
-            {
-                "name": "matching",
-                "job_id": matching_job_id,
-                "status": "queued",
-                "check_status": f"/api/ml/training-status/{matching_job_id}"
-            }
-        ]
-    }
-
-    if auto_generate:
-        # Note: In production, this should wait for matching to complete
-        # For now, we'll just queue the generation job
-        response["message"] += " (Note: Generation will use existing model, not matched tracks)"
-
-    return response
 
 @router.get("/health")
 async def health_check():

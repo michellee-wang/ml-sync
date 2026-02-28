@@ -74,6 +74,8 @@ class MIDIFeatureExtractor:
 
                 # Key signature
                 'key_signatures': len(midi_data.key_signature_changes),
+                'key': self._get_key(midi_data),
+                'mode': self._get_mode(midi_data),
             }
 
             return features
@@ -178,6 +180,97 @@ class MIDIFeatureExtractor:
             return 0.0
 
         return float(np.std(velocities))
+
+    def _get_key(self, midi_data: pretty_midi.PrettyMIDI) -> int:
+        """
+        Get the key of the MIDI file (0-11 for C, C#, D, ..., B)
+        Returns the first key signature or estimates from pitch distribution
+        """
+        if midi_data.key_signature_changes:
+            # Get first key signature (0-11 for C, C#, D, ..., B)
+            return midi_data.key_signature_changes[0].key_number % 12
+
+        # Estimate key from pitch distribution (Krumhansl-Schmuckler algorithm simplified)
+        all_pitches = []
+        for instrument in midi_data.instruments:
+            if not instrument.is_drum:
+                all_pitches.extend([note.pitch % 12 for note in instrument.notes])
+
+        if not all_pitches:
+            return 0  # Default to C
+
+        # Count pitch class occurrences
+        pitch_counts = np.zeros(12)
+        for pitch in all_pitches:
+            pitch_counts[pitch] += 1
+
+        # Normalize
+        if pitch_counts.sum() > 0:
+            pitch_counts = pitch_counts / pitch_counts.sum()
+
+        # Major key profiles (simplified Krumhansl-Kessler)
+        major_profile = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
+        major_profile = major_profile / major_profile.sum()
+
+        # Find best correlation
+        best_key = 0
+        best_corr = -1
+        for key in range(12):
+            shifted_profile = np.roll(major_profile, key)
+            corr = np.corrcoef(pitch_counts, shifted_profile)[0, 1]
+            if corr > best_corr:
+                best_corr = corr
+                best_key = key
+
+        return best_key
+
+    def _get_mode(self, midi_data: pretty_midi.PrettyMIDI) -> int:
+        """
+        Get the mode of the MIDI file (0=minor, 1=major)
+        Estimates from pitch distribution and intervals
+        """
+        all_pitches = []
+        for instrument in midi_data.instruments:
+            if not instrument.is_drum:
+                all_pitches.extend([note.pitch % 12 for note in instrument.notes])
+
+        if not all_pitches:
+            return 1  # Default to major
+
+        # Count pitch class occurrences
+        pitch_counts = np.zeros(12)
+        for pitch in all_pitches:
+            pitch_counts[pitch] += 1
+
+        if pitch_counts.sum() == 0:
+            return 1
+
+        # Normalize
+        pitch_counts = pitch_counts / pitch_counts.sum()
+
+        # Major and minor profiles (simplified Krumhansl-Kessler)
+        major_profile = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
+        minor_profile = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17])
+
+        major_profile = major_profile / major_profile.sum()
+        minor_profile = minor_profile / minor_profile.sum()
+
+        # Find best match for each profile across all keys
+        best_major_corr = -1
+        best_minor_corr = -1
+
+        for key in range(12):
+            major_shifted = np.roll(major_profile, key)
+            minor_shifted = np.roll(minor_profile, key)
+
+            major_corr = np.corrcoef(pitch_counts, major_shifted)[0, 1]
+            minor_corr = np.corrcoef(pitch_counts, minor_shifted)[0, 1]
+
+            best_major_corr = max(best_major_corr, major_corr)
+            best_minor_corr = max(best_minor_corr, minor_corr)
+
+        # Return 1 for major, 0 for minor
+        return 1 if best_major_corr > best_minor_corr else 0
 
 
 def extract_midi_features(midi_path: Path, fs: int = 100) -> Optional[Dict]:

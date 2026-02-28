@@ -14,14 +14,19 @@ from datetime import datetime
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Import ML routes (Modal integration, song matching, etc.)
+from .routes import router as ml_router
+
 # Initialize FastAPI app
 app = FastAPI(
     title="ML Music Genre Service",
-    description="Music genre prediction and fine-tuning service using Spotify data",
+    description="Music genre prediction and fine-tuning service",
     version="1.0.0"
 )
 
 # CORS middleware
+app.include_router(ml_router, prefix="/api/ml", tags=["ml"])
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Configure appropriately for production
@@ -34,12 +39,6 @@ app.add_middleware(
 
 class PredictionRequest(BaseModel):
     audio_url: str = Field(..., description="URL to audio file")
-    model_name: str = Field(default="genre_classifier", description="Model to use for prediction")
-    top_k: int = Field(default=5, description="Return top K predictions")
-
-
-class SpotifyPredictionRequest(BaseModel):
-    track_id: str = Field(..., description="Spotify track ID")
     model_name: str = Field(default="genre_classifier", description="Model to use for prediction")
     top_k: int = Field(default=5, description="Return top K predictions")
 
@@ -66,8 +65,6 @@ class FineTuneConfig(BaseModel):
 
 class FineTuneRequest(BaseModel):
     base_model: str = Field(..., description="Base model name")
-    spotify_user_id: Optional[str] = Field(None, description="Spotify user ID for playlist data")
-    playlist_ids: Optional[List[str]] = Field(None, description="Specific playlist IDs to use")
     config: FineTuneConfig = Field(default_factory=FineTuneConfig)
     job_name: Optional[str] = Field(None, description="Custom name for fine-tuning job")
 
@@ -166,47 +163,6 @@ async def predict_genre(request: PredictionRequest):
     except Exception as e:
         logger.error(f"Prediction error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
-
-
-@app.post("/predict/spotify", response_model=PredictionResponse)
-async def predict_spotify_track(request: SpotifyPredictionRequest):
-    """
-    Predict music genre from Spotify track ID
-
-    Args:
-        request: Prediction request with Spotify track ID
-
-    Returns:
-        Genre predictions with confidence scores
-    """
-    try:
-        logger.info(f"Predicting genre for Spotify track: {request.track_id}")
-
-        # TODO: Implement Spotify integration
-        # 1. Fetch track info using spotipy
-        # 2. Get audio features from Spotify API
-        # 3. Download preview audio if available
-        # 4. Run prediction
-
-        # Placeholder response
-        return PredictionResponse(
-            predictions=[
-                GenrePrediction(genre="Pop", confidence=0.91),
-                GenrePrediction(genre="Dance", confidence=0.67),
-            ],
-            audio_features={
-                "tempo": 120.0,
-                "energy": 0.65,
-                "danceability": 0.75,
-                "valence": 0.80
-            },
-            model_used=request.model_name,
-            timestamp=datetime.utcnow().isoformat()
-        )
-
-    except Exception as e:
-        logger.error(f"Spotify prediction error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Spotify prediction failed: {str(e)}")
 
 
 @app.post("/analyze/features")
